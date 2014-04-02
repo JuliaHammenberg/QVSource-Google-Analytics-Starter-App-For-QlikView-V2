@@ -1,0 +1,444 @@
+﻿///$tab Change Log
+/*
+Change Log
+----------
+0.0.8 - 02/04/14
+----------------
+* Initial version.
+*/
+///$tab Main
+SET ThousandSep=',';
+SET DecimalSep='.';
+SET MoneyThousandSep=',';
+SET MoneyDecimalSep='.';
+SET MoneyFormat='£#,##0.00;-£#,##0.00';
+SET TimeFormat='hh:mm:ss';
+SET DateFormat='DD/MM/YYYY';
+SET TimestampFormat='DD/MM/YYYY hh:mm:ss[.fff]';
+SET MonthNames='Jan;Feb;Mar;Apr;May;Jun;Jul;Aug;Sep;Oct;Nov;Dec';
+SET DayNames='Mon;Tue;Wed;Thu;Fri;Sat;Sun';
+
+
+// ---------------------------------------------------------------
+// Config
+let vNumberOfDaysToGoBackOnInitialReload = 30;
+
+//
+// Edit the following table so that the left column contains the 
+// Google Analytics ID and the right column contains a friendly name
+// for each of the sites you want to get data for.
+//
+// You can find the ID by going to the Google Analytic connector in QVSource and
+// looking at the WebProfiles table (Id column).
+//
+Profiles:
+LOAD * INLINE [
+ga_id, WebsiteProfile
+349749, Website
+65686262, Blog
+];
+
+let vAppId = 'MyGAApp';
+// ---------------------------------------------------------------
+
+let vRoot = 'http://localhost:5555/QVSource/GoogleAnalyticsConnectorV3/?table=DataFromQueryURI&appID=$(vAppId)';
+let qvd = 'Data.qvd';
+
+let size = filesize('$(qvd)');
+
+let isFirstTime = 1;
+
+if not isnull(size) then
+	let isFirstTime = 0;
+endif
+	
+if isFirstTime = 0 then
+
+	let vSince = Date(timestamp(now(1)) - 2);
+	let vSinceString = date(vSince, 'YYYY-MM-DD');
+
+	Data:
+	LOAD
+	* 
+	FROM '$(qvd)' (qvd)
+	where dim_date_qv < '$(vSince)';
+	
+ELSE
+
+	let vSince = Date(timestamp(now(1)) - $(vNumberOfDaysToGoBackOnInitialReload));
+	let vSinceString = date(vSince, 'YYYY-MM-DD');
+	
+end if
+
+let vToday = Date(timestamp(now(1)));
+let vTodayString = date(vToday, 'YYYY-MM-DD');
+
+let vDateRange = 'start-date%3d$(vSinceString)%26end-date%3d$(vTodayString)';
+
+LET noRows = NoOfRows('Profiles');
+		
+for i=0 to $(noRows)-1
+		
+	let ga_id = Replace(peek('ga_id',$(i),'Profiles'), '@', '');
+	let profile = peek('WebsiteProfile',$(i),'Profiles');
+
+	let vConcatenate = '';	
+	
+	if isFirstTime = 0 then
+		let vConcatenate = 'Concatenate';
+	endif
+	
+	if i > 0 then
+		let vConcatenate = 'Concatenate';
+	endif
+	
+	// ***************************************************
+	// The following load is highlighted as an error in 
+	// QlikView's syntax checking but it still loads OK.
+	// ***************************************************
+		    
+    // Visitors_and_Pageviews_Over_Time
+	Data:
+	$(vConcatenate)
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Visitors_and_Pageviews_Over_Time' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		metric_pageviews,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3adate%26metrics%3dga%3avisits%2cga%3apageviews%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Mobile_Traffic';
+
+    // Mobile_Traffic
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Mobile_Traffic' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		metric_pageviews,
+		metric_timeOnSite,
+		dim_mobileDeviceInfo,
+		dim_source,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3amobileDeviceInfo%2cga%3asource%2cga%3adate%26metrics%3dga%3avisits%2cga%3apageviews%2cga%3atimeOnSite%26$(vDateRange)%26segments=gaid%3a%3a-14%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Revenue_Generating_Campaigns';
+
+    // Revenue_Generating_Campaigns
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Revenue_Generating_Campaigns' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		metric_pageviews,
+		metric_timeOnSite,
+		metric_bounces,
+		dim_source,
+		dim_medium,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3amedium%2cga%3adate%26metrics%3dga%3avisits%2cga%3apageviews%2cga%3atimeOnSite%2cga%3abounces%26$(vDateRange)%26segments=dynamic%3a%3aga%3atransactions%26gt%3b1%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run New_vs_Returning_Visits';
+
+    // New_vs_Returning_Visits
+	LOAD
+		'$(ga_id)' as ga_id,
+        'New_vs_Returning_Visits' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		dim_visitorType,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3avisitorType%2cga%3adate%26metrics%3dga%3avisits%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Visits_by_Country';
+
+    // Visits_by_Country
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Visits_by_Country' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		dim_country,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3acountry%2cga%3adate%26metrics%3dga%3avisits%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Browser_and_Operating_System';
+
+    // Browser_and_Operating_System
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Browser_and_Operating_System' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		dim_operatingSystem,
+		dim_operatingSystemVersion,
+		dim_browser,
+		dim_browserVersion,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3aoperatingSystem%2cga%3aoperatingSystemVersion%2cga%3abrowser%2cga%3abrowserVersion%2cga%3adate%26metrics%3dga%3avisits%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Time_on_Site';
+
+    // Time_on_Site
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Time_on_Site' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		metric_timeOnSite,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3adate%26metrics%3dga%3avisits%2cga%3atimeOnSite%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run All_Traffic_Sources___Usage';
+
+    // All_Traffic_Sources___Usage
+	LOAD
+		'$(ga_id)' as ga_id,
+        'All_Traffic_Sources___Usage' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		metric_pageviews,
+		metric_timeOnSite,
+		metric_exits,
+		dim_source,
+		dim_medium,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3amedium%2cga%3adate%26metrics%3dga%3avisits%2cga%3apageviews%2cga%3atimeOnSite%2cga%3aexits%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run All_Traffic_Sources___Goals';
+
+    // All_Traffic_Sources___Goals
+	LOAD
+		'$(ga_id)' as ga_id,
+        'All_Traffic_Sources___Goals' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		metric_goal1Starts,
+		metric_goal1Completions,
+		metric_goal1Value,
+		metric_goalStartsAll,
+		metric_goalCompletionsAll,
+		metric_goalValueAll,
+		dim_source,
+		dim_medium,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3amedium%2cga%3adate%26metrics%3dga%3avisits%2cga%3agoal1Starts%2cga%3agoal1Completions%2cga%3agoal1Value%2cga%3agoalStartsAll%2cga%3agoalCompletionsAll%2cga%3agoalValueAll%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run All_Traffic_Sources___E_Commerce';
+
+    // All_Traffic_Sources___E_Commerce
+	LOAD
+		'$(ga_id)' as ga_id,
+        'All_Traffic_Sources___E_Commerce' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		metric_transactionRevenue,
+		metric_transactions,
+		metric_uniquePurchases,
+		dim_source,
+		dim_medium,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3amedium%2cga%3adate%26metrics%3dga%3avisits%2cga%3atransactionRevenue%2cga%3atransactions%2cga%3auniquePurchases%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Referring_Sites';
+
+    // Referring_Sites
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Referring_Sites' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_pageviews,
+		metric_timeOnSite,
+		metric_exits,
+		dim_source,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3adate%26metrics%3dga%3apageviews%2cga%3atimeOnSite%2cga%3aexits%26$(vDateRange)%26filters=ga%3amedium%3d%3dreferral%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Search_Engines';
+
+    // Search_Engines
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Search_Engines' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_pageviews,
+		metric_timeOnSite,
+		metric_exits,
+		dim_source,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3adate%26metrics%3dga%3apageviews%2cga%3atimeOnSite%2cga%3aexits%26$(vDateRange)%26filters=ga%3amedium%3d%3dcpa%2cga%3amedium%3d%3dcpc%2cga%3amedium%3d%3dcpm%2cga%3amedium%3d%3dcpp%2cga%3amedium%3d%3dcpv%2cga%3amedium%3d%3dorganic%2cga%3amedium%3d%3dppc%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Search_Engines___Organic_Search';
+
+    // Search_Engines___Organic_Search
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Search_Engines___Organic_Search' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_pageviews,
+		metric_timeOnSite,
+		metric_exits,
+		dim_source,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3adate%26metrics%3dga%3apageviews%2cga%3atimeOnSite%2cga%3aexits%26$(vDateRange)%26filters=ga%3amedium%3d%3dorganic%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Search_Engines___Paid_Search';
+
+    // Search_Engines___Paid_Search
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Search_Engines___Paid_Search' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_pageviews,
+		metric_timeOnSite,
+		metric_exits,
+		dim_source,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asource%2cga%3adate%26metrics%3dga%3apageviews%2cga%3atimeOnSite%2cga%3aexits%26$(vDateRange)%26filters=ga%3amedium%3d%3dcpa%2cga%3amedium%3d%3dcpc%2cga%3amedium%3d%3dcpm%2cga%3amedium%3d%3dcpp%2cga%3amedium%3d%3dcpv%2cga%3amedium%3d%3dppc%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Keywords';
+
+    // Keywords
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Keywords' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_visits,
+		dim_keyword,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3akeyword%2cga%3adate%26metrics%3dga%3avisits%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Top_Content';
+
+    // Top_Content
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Top_Content' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_pageviews,
+		metric_uniquePageviews,
+		metric_timeOnPage,
+		metric_bounces,
+		metric_entrances,
+		metric_exits,
+		dim_pagePath,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3apagePath%2cga%3adate%26metrics%3dga%3apageviews%2cga%3auniquePageviews%2cga%3atimeOnPage%2cga%3abounces%2cga%3aentrances%2cga%3aexits%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Top_Landing_Pages';
+
+    // Top_Landing_Pages
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Top_Landing_Pages' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_entrances,
+		metric_bounces,
+		dim_landingPagePath,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3alandingPagePath%2cga%3adate%26metrics%3dga%3aentrances%2cga%3abounces%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Top_Exit_Pages';
+
+    // Top_Exit_Pages
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Top_Exit_Pages' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_exits,
+		metric_pageviews,
+		dim_exitPagePath,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3aexitPagePath%2cga%3adate%26metrics%3dga%3aexits%2cga%3apageviews%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    
+    Concatenate
+
+    // trace 'About to run Site_Search___Search_Terms';
+
+    // Site_Search___Search_Terms
+	LOAD
+		'$(ga_id)' as ga_id,
+        'Site_Search___Search_Terms' as ReportName,
+		date(Date#(dim_date, 'YYYYMMDD')) as dim_date_qv,
+		metric_searchUniques,
+		dim_searchKeyword,
+		dim_date
+	FROM
+	[$(vRoot)&feed=ids%3dga%253A$(ga_id)%26dimensions%3dga%3asearchKeyword%2cga%3adate%26metrics%3dga%3asearchUniques%26$(vDateRange)%26max-results%3d10000]
+	(qvx);
+    	    
+next
+
+store Data into 'Data.qvd' (qvd);
