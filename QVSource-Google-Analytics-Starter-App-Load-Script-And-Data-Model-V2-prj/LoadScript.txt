@@ -2,6 +2,11 @@
 /*
 Change Log
 ----------
+0.1.0 - 22/09/15
+----------------
+* Removed config.txt as this was not being used.
+* Added a couple of very simple charts to a new tab.
+
 0.0.8 - 02/04/14
 ----------------
 * Initial version.
@@ -21,7 +26,7 @@ SET DayNames='Mon;Tue;Wed;Thu;Fri;Sat;Sun';
 
 // ---------------------------------------------------------------
 // Config
-let vNumberOfDaysToGoBackOnInitialReload = 30;
+let vNumberOfDaysToGoBackOnInitialReload = 180;
 
 //
 // Edit the following table so that the left column contains the 
